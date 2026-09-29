@@ -24,7 +24,9 @@ def count_recent_refunds(email, today=None):
                                 refunded_date__gte=since).count()
 
 
-def evaluate(order, customer_email, reason, recent_refunds=0, today=None):
+def pre_check(order, customer_email, today=None):
+    """Checks that don't depend on WHY the customer wants a refund.
+    Returns a Decision, or None if the AI must classify the reason first."""
     today = today or date.today()
     if order is None:
         return Decision("Escalated", "ORDER_NOT_FOUND", ["Order was not found."])
@@ -32,15 +34,24 @@ def evaluate(order, customer_email, reason, recent_refunds=0, today=None):
         return Decision("Escalated", "OWNER_MISMATCH", ["Order does not belong to this email."])
     if order.refunded:
         return Decision("Denied", "ALREADY_REFUNDED", ["Order was already refunded."])
-
-    is_defect = reason in DEFECT_REASONS
-    if order.final_sale and not is_defect:
+    if order.final_sale:
         return Decision("Denied", "FINAL_SALE", ["Final sale items are not refundable."])
-
     age = (today - order.order_date).days
     if age > RETURN_WINDOW_DAYS:
         return Decision("Denied", "RETURN_WINDOW",
                         [f"Order is {age} days old; window is {RETURN_WINDOW_DAYS} days."])
+    if order.amount > HUMAN_REVIEW_THRESHOLD:
+        return Decision("Escalated", "HIGH_VALUE",
+                        [f"Amount ${order.amount} exceeds ${HUMAN_REVIEW_THRESHOLD}."])
+    return None
+
+
+def evaluate(order, customer_email, reason, recent_refunds=0, today=None):
+    early = pre_check(order, customer_email, today)
+    if early:
+        return early
+
+    is_defect = reason in DEFECT_REASONS
     if recent_refunds >= MAX_RECENT_REFUNDS:
         return Decision("Escalated", "REFUND_PATTERN",
                         [f"{recent_refunds} refunds in the last {RECENT_REFUND_DAYS} days."])

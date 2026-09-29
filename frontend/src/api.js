@@ -18,3 +18,9 @@ export async function fetchRequests() {
   if (!res.ok) throw new Error("Could not load requests");
   return res.json();
 }
+
+export async function fetchCustomers() {
+  const res = await fetch(`${BASE}/customers/`);
+  if (!res.ok) throw new Error("Could not load customers");
+  return res.json();
+}

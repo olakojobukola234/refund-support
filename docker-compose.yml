@@ -1,0 +1,20 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      DJANGO_DEBUG: "false"
+      API_KEY: ${API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-gemini-3.8-flash}
+      AI_REPLY_ENABLED: ${AI_REPLY_ENABLED:-false}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000/api
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
