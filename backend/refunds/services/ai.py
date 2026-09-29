@@ -7,10 +7,10 @@ import time
 
 from google import genai
 from google.genai import types
+from openai import OpenAI
 
 log = logging.getLogger(__name__)
 
-MODEL = os.environ.get("AI_MODEL", "gemini-3.8-flash")
 MAX_MESSAGE_CHARS = 1000
 ALLOWED_REASONS = {"damaged", "wrong_item", "changed_mind", "unclear"}
 LOCAL_REASON_PATTERNS = {
@@ -68,19 +68,43 @@ RETRIES = 3
 
 
 def _generate(system, contents, json_mode=False):
-    key = os.environ.get("API_KEY")
-    if not key:
-        raise RuntimeError("API_KEY is not set")
-    client = genai.Client(api_key=key)
-    config = types.GenerateContentConfig(
-        system_instruction=system,
-        temperature=0,
-        response_mime_type="application/json" if json_mode else None,
+    provider = os.environ.get("AI_PROVIDER", "gemini").strip().lower()
+    model = os.environ.get("AI_MODEL") or (
+        "gemini-3.8-flash" if provider == "gemini" else "gpt-4o-mini"
     )
+    key_name = "GEMINI_API_KEY" if provider == "gemini" else "OPENAI_API_KEY"
+    key = os.environ.get(key_name) or os.environ.get("API_KEY")
+    if not key:
+        raise RuntimeError(f"{key_name} is not set")
+    if provider == "gemini":
+        client = genai.Client(api_key=key)
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            temperature=0,
+            response_mime_type="application/json" if json_mode else None,
+        )
+    elif provider == "openai":
+        client_options = {"api_key": key}
+        base_url = os.environ.get("OPENAI_BASE_URL")
+        if base_url:
+            client_options["base_url"] = base_url
+        client = OpenAI(**client_options)
+    else:
+        raise RuntimeError("AI_PROVIDER must be 'gemini' or 'openai'")
+
     for attempt in range(RETRIES):
         try:
-            response = client.models.generate_content(model=MODEL, contents=contents, config=config)
-            return response.text
+            if provider == "gemini":
+                response = client.models.generate_content(model=model, contents=contents, config=config)
+                return response.text
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": system},
+                          {"role": "user", "content": contents}],
+                temperature=0,
+                response_format={"type": "json_object"} if json_mode else None,
+            )
+            return response.choices[0].message.content
         except Exception as exc:
             transient = any(t in str(exc) for t in ("503", "UNAVAILABLE"))
             if not transient or attempt == RETRIES - 1:

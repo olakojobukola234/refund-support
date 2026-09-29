@@ -24,6 +24,8 @@ A request is escalated when the order cannot be verified, the email does not mat
 4. Customer text is treated as untrusted data. Instructions in a message cannot alter the policy; detected prompt-injection attempts are escalated.
 5. The service returns **Approved**, **Denied**, or **Escalated**, with the policy rule and explanation. Replies use fixed templates by default; AI-generated reply wording is optional.
 
+Reviewers can evaluate either seeded examples or custom simulation inputs. Custom simulation facts are temporary inputs, not new customer/order records; only the resulting refund request is retained in the audit history.
+
 ## Sample Outcomes
 
 - A non-final-sale $89 order delivered 5 days ago, reported damaged by its owner: **Approved**.

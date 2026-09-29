@@ -1,8 +1,10 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.core.management import call_command
 from django.test import TestCase
+from rest_framework.test import APIClient
 from refunds.models import Order
+from refunds.services import ai
 from refunds.services.policy import evaluate, count_recent_refunds
 from refunds.services.workflow import process_request
 
@@ -97,6 +99,64 @@ class PolicyTests(TestCase):
         )
         self.assertEqual(record.rule, "CONFLICTING_REQUEST")
         self.assertEqual(record.decision, "Escalated")
+        generate.assert_not_called()
+
+    @patch("refunds.services.ai.OpenAI")
+    @patch.dict("os.environ", {
+        "AI_PROVIDER": "openai",
+        "AI_MODEL": "gpt-4o-mini",
+        "OPENAI_API_KEY": "test-key",
+    })
+    def test_openai_provider_adapter(self, openai_client):
+        response = Mock(choices=[Mock(message=Mock(content='{"reason":"damaged"}'))])
+        openai_client.return_value.chat.completions.create.return_value = response
+
+        result = ai._generate("system", "message", json_mode=True)
+
+        self.assertEqual(result, '{"reason":"damaged"}')
+        openai_client.assert_called_once_with(api_key="test-key")
+        call = openai_client.return_value.chat.completions.create.call_args.kwargs
+        self.assertEqual(call["model"], "gpt-4o-mini")
+        self.assertEqual(call["response_format"], {"type": "json_object"})
+
+    @patch("refunds.services.ai.genai.Client")
+    @patch.dict("os.environ", {
+        "AI_PROVIDER": "gemini",
+        "AI_MODEL": "test-gemini-model",
+        "GEMINI_API_KEY": "test-key",
+    })
+    def test_gemini_provider_adapter(self, gemini_client):
+        gemini_client.return_value.models.generate_content.return_value = Mock(text="classified")
+
+        result = ai._generate("system", "message")
+
+        self.assertEqual(result, "classified")
+        gemini_client.assert_called_once_with(api_key="test-key")
+        call = gemini_client.return_value.models.generate_content.call_args.kwargs
+        self.assertEqual(call["model"], "test-gemini-model")
+
+    @patch("refunds.services.workflow.ai._generate")
+    def test_custom_simulation_uses_supplied_order_without_seeding_it(self, generate):
+        with patch("refunds.views.workflow.process_request", wraps=process_request) as process:
+            response = APIClient().post("/api/refund-request/", {
+                "customer_email": "reviewer@example.com",
+                "order_id": "TEST-9001",
+                "message": "My sample item arrived damaged.",
+                "order_data": {
+                    "item": "Sample headphones",
+                    "amount": "89.99",
+                    "order_date": "2026-09-29",
+                    "final_sale": False,
+                    "refunded": False,
+                    "recent_refunds": 0,
+                },
+            }, format="json")
+        self.assertIn("order_data", process.call_args.kwargs, process.call_args)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["decision"], "Approved", response.data)
+        self.assertEqual(response.data["order_id"], "TEST-9001")
+        self.assertFalse(Order.objects.filter(id="TEST-9001").exists())
         generate.assert_not_called()
 
     def test_already_refunded(self):

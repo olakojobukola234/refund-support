@@ -1,5 +1,5 @@
 """Orchestrates one refund request: cheap rules first, AI only when needed."""
-from refunds.models import Order, RefundRequest
+from refunds.models import Customer, Order, RefundRequest
 from refunds.services import ai
 from refunds.services.policy import Decision, count_recent_refunds, evaluate, pre_check
 
@@ -8,7 +8,7 @@ def _lookup(order_id):
     return Order.objects.select_related("customer").filter(id=order_id).first()
 
 
-def process_request(customer_email, order_id, message):
+def process_request(customer_email, order_id, message, order_data=None):
     clean = ai.sanitize(message)
     order_id = (order_id or "").strip().upper()
     classification = ai.classify_locally(clean) if ai.looks_like_injection(clean) else None
@@ -18,13 +18,26 @@ def process_request(customer_email, order_id, message):
         classification = classification or ai.classify(clean)
         order_id = classification["order_id"] or ""
 
-    order = _lookup(order_id) if order_id else None
+    if order_data is not None:
+        order = Order(
+            id=order_id,
+            customer=Customer(email=customer_email),
+            item=order_data["item"],
+            amount=order_data["amount"],
+            order_date=order_data["order_date"],
+            final_sale=order_data.get("final_sale", False),
+            refunded=order_data.get("refunded", False),
+        )
+        recent_refunds = order_data.get("recent_refunds", 0)
+    else:
+        order = _lookup(order_id) if order_id else None
+        recent_refunds = count_recent_refunds(customer_email)
     decision = pre_check(order, customer_email)
 
     if decision is None:
         classification = classification or ai.classify_locally(clean) or ai.classify(clean)
         decision = evaluate(order, customer_email, classification["reason"],
-                            recent_refunds=count_recent_refunds(customer_email))
+                            recent_refunds=recent_refunds)
     elif classification is None:  # decided by rules alone, so no AI call was spent
         classification = {
             "reason": "n/a",
