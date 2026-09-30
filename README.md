@@ -40,6 +40,8 @@ cp .env.example .env
 
 Choose one provider, set its key in `.env`, then start or rebuild the backend with `docker compose up --build`. Do not commit `.env` or share API keys. `.env` is ignored by Git.
 
+`.env.example` is intentionally included in the public repository. It contains provider names and blank key fields, not credentials. Reviewers copy it to their own local `.env` and add a key only if they want AI classification; they do not send `.env` to the project author.
+
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `AI_PROVIDER` | `gemini` | `gemini` or `openai`. The OpenAI adapter also supports OpenAI-compatible endpoints. |
@@ -99,7 +101,7 @@ A short recording should show:
 - Dates are evaluated using the backend's current date. The return window is inclusive through day 30; day 31 is too old.
 - An amount exactly equal to $500 does not trigger the high-value review rule; the rule is for amounts greater than $500.
 - Keyword matching avoids AI calls for common clear reasons, but unusual phrasing may require AI or human review.
-- The demo uses SQLite, seeded data, and simple local rules instead of authentication, payment integration, or a production database. The seed command resets mock customer/order data on startup.
+- The demo uses SQLite, seeded data, and simple local rules instead of authentication, payment integration, or a production database. The separate seed job is idempotent and preserves unrelated customer/order records.
 - Provider quota, network availability, and model output can affect classification of ambiguous messages. Policy evaluation remains deterministic, and uncertain cases are escalated rather than auto-approved.
 
 ## Publishing
