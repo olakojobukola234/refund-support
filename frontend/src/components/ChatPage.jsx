@@ -42,6 +42,7 @@ export default function ChatPage() {
   const [initialPendingRequest] = useState(readPendingRequest);
   const [pendingRequest, setPendingRequest] = useState(initialPendingRequest);
   const [checkingPending, setCheckingPending] = useState(Boolean(initialPendingRequest));
+  const [confirmationUnknown, setConfirmationUnknown] = useState(false);
   const [chat, setChat] = useState([
     { from: "system", greeting: true, text: "Hello! I can help you with your order refund today." },
     ...(initialPendingRequest ? [{ from: "customer", text: initialPendingRequest.message }] : []),
@@ -96,6 +97,7 @@ export default function ChatPage() {
 
   async function sendPendingRequest(request) {
     setError("");
+    setConfirmationUnknown(false);
     setLoading(true);
     setStep(0);
     try {
@@ -107,11 +109,13 @@ export default function ChatPage() {
     } catch (err) {
       if (err.retryable === false) {
         setError(`${err.message}. Check the details and submit again.`);
+        setConfirmationUnknown(false);
         sessionStorage.removeItem(PENDING_REQUEST_KEY);
         setPendingRequest(null);
         setMessage(request.message);
       } else {
         setError("");
+        setConfirmationUnknown(true);
       }
     } finally {
       setLoading(false);
@@ -123,6 +127,7 @@ export default function ChatPage() {
     sessionStorage.removeItem(PENDING_REQUEST_KEY);
     setPendingRequest(null);
     setCheckingPending(false);
+    setConfirmationUnknown(false);
   }
 
   useEffect(() => {
@@ -131,9 +136,12 @@ export default function ChatPage() {
     async function reconcilePendingRequest() {
       try {
         const receipt = await fetchRefundReceipt(initialPendingRequest.idempotency_key);
-        if (!cancelled && receipt) completeRequest(receipt);
+        if (!cancelled) {
+          if (receipt) completeRequest(receipt);
+          else setConfirmationUnknown(true);
+        }
       } catch {
-        // Keep the saved request available for a safe manual retry.
+        if (!cancelled) setConfirmationUnknown(true);
       } finally {
         if (!cancelled) setCheckingPending(false);
       }
@@ -304,7 +312,7 @@ export default function ChatPage() {
         </div>
 
         {error && <p className="error">{error}</p>}
-        {pendingRequest && (
+        {pendingRequest && (checkingPending || confirmationUnknown) && (
           <div className="retry-panel" role="alert">
             <p>{checkingPending
               ? "Checking whether your request was received..."
