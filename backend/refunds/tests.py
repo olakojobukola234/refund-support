@@ -153,6 +153,21 @@ class PolicyTests(TestCase):
         self.assertIn("quota", response.data["ai_notes"].lower())
         generate.assert_called_once()
 
+    @patch("refunds.services.workflow.ai._generate", side_effect=TimeoutError("request timed out"))
+    def test_ai_network_timeout_returns_fallback_and_is_recorded(self, generate):
+        response = APIClient().post("/api/refund-request/", {
+            "idempotency_key": str(uuid4()),
+            "customer_email": "amara@example.com",
+            "order_id": "ORD-1001",
+            "message": "I need help with a refund for an unexpected situation.",
+        }, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["decision"], "Escalated")
+        self.assertEqual(response.data["ai_status"], "unavailable")
+        self.assertIn("network or service error", response.data["ai_notes"].lower())
+        generate.assert_called_once()
+
     @patch("refunds.services.ai.OpenAI")
     @patch.dict("os.environ", {
         "AI_PROVIDER": "openai",
@@ -166,7 +181,9 @@ class PolicyTests(TestCase):
         result = ai._generate("system", "message", json_mode=True)
 
         self.assertEqual(result, '{"reason":"damaged"}')
-        openai_client.assert_called_once_with(api_key="test-key")
+        openai_client.assert_called_once_with(
+            api_key="test-key", timeout=8, max_retries=0
+        )
         call = openai_client.return_value.chat.completions.create.call_args.kwargs
         self.assertEqual(call["model"], "gpt-4o-mini")
         self.assertEqual(call["response_format"], {"type": "json_object"})
@@ -186,6 +203,8 @@ class PolicyTests(TestCase):
         gemini_client.assert_called_once_with(api_key="test-key")
         call = gemini_client.return_value.models.generate_content.call_args.kwargs
         self.assertEqual(call["model"], "test-gemini-model")
+        self.assertEqual(call["config"].http_options.timeout, 8000)
+        self.assertEqual(call["config"].http_options.retry_options.attempts, 1)
 
     @patch("refunds.services.workflow.ai._generate")
     def test_custom_simulation_uses_supplied_order_without_seeding_it(self, generate):

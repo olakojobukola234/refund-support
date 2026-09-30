@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import re
-import time
 
 from google import genai
 from google.genai import types
@@ -69,7 +68,7 @@ def classify_locally(message):
     }
 
 
-RETRIES = 3
+AI_REQUEST_TIMEOUT_SECONDS = 8
 
 
 def _generate(system, contents, json_mode=False):
@@ -87,6 +86,10 @@ def _generate(system, contents, json_mode=False):
             system_instruction=system,
             temperature=0,
             response_mime_type="application/json" if json_mode else None,
+            http_options=types.HttpOptions(
+                timeout=AI_REQUEST_TIMEOUT_SECONDS * 1000,
+                retry_options=types.HttpRetryOptions(attempts=1),
+            ),
         )
     elif provider == "openai":
         if OpenAI is None:
@@ -95,35 +98,32 @@ def _generate(system, contents, json_mode=False):
         base_url = os.environ.get("OPENAI_BASE_URL")
         if base_url:
             client_options["base_url"] = base_url
-        client = OpenAI(**client_options)
+        client = OpenAI(
+            **client_options,
+            timeout=AI_REQUEST_TIMEOUT_SECONDS,
+            max_retries=0,
+        )
     else:
         raise RuntimeError("AI_PROVIDER must be 'gemini' or 'openai'")
 
-    for attempt in range(RETRIES):
-        try:
-            if provider == "gemini":
-                response = client.models.generate_content(model=model, contents=contents, config=config)
-                return response.text
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": system},
-                          {"role": "user", "content": contents}],
-                temperature=0,
-                response_format={"type": "json_object"} if json_mode else None,
-            )
-            return response.choices[0].message.content
-        except Exception as exc:
-            transient = any(t in str(exc) for t in ("503", "UNAVAILABLE"))
-            if not transient or attempt == RETRIES - 1:
-                raise
-            time.sleep(2 ** attempt)  # wait 1s, then 2s, then give up
+    if provider == "gemini":
+        response = client.models.generate_content(model=model, contents=contents, config=config)
+        return response.text
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": system},
+                  {"role": "user", "content": contents}],
+        temperature=0,
+        response_format={"type": "json_object"} if json_mode else None,
+    )
+    return response.choices[0].message.content
 
 
 def _failure_details(exc):
     message = str(exc).lower()
     if any(token in message for token in ("429", "quota", "resource_exhausted", "rate limit")):
         return "quota_exceeded", "AI quota or rate limit reached; classification was unavailable."
-    if any(token in message for token in ("timeout", "connection", "network", "503", "unavailable")):
+    if any(token in message for token in ("timeout", "timed out", "connection", "network", "503", "unavailable")):
         return "unavailable", "AI provider unavailable due to a network or service error."
     if "not set" in message or "not installed" in message:
         return "not_configured", "AI provider is not configured; classification was unavailable."
