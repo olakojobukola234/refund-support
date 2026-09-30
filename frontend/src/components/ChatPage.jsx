@@ -9,9 +9,9 @@ const QUICK_TESTS = [
 ];
 
 const LOADING_STEPS = [
-  "🔍 Checking order data...",
-  "⚖️ Applying refund policy...",
-  "🤖 Consulting AI assistant...",
+  "Checking your order...",
+  "Reviewing your request...",
+  "Preparing your confirmation...",
 ];
 const PENDING_REQUEST_KEY = "refund-support-pending-request";
 
@@ -21,18 +21,6 @@ function readPendingRequest() {
   } catch {
     return null;
   }
-}
-
-function aiStatusLabel(status) {
-  return ({
-    local: "Classified locally",
-    not_used: "Policy only",
-    success: "AI classification used",
-    quota_exceeded: "AI quota exceeded",
-    unavailable: "AI provider unavailable",
-    not_configured: "AI not configured",
-    error: "AI error",
-  })[status] || "AI status unknown";
 }
 
 export default function ChatPage() {
@@ -103,17 +91,17 @@ export default function ChatPage() {
         ...request.payload,
         idempotency_key: request.idempotency_key,
       });
-      setChat((current) => [...current, { from: "system", result }]);
+      setChat((current) => [...current, { from: "system", receipt: result }]);
       sessionStorage.removeItem(PENDING_REQUEST_KEY);
       setPendingRequest(null);
     } catch (err) {
-      setError(err.retryable === false
-        ? `${err.message}. Edit the request and submit again.`
-        : `${err.message}. Your request is saved; retrying will not create a duplicate.`);
       if (err.retryable === false) {
+        setError(`${err.message}. Check the details and submit again.`);
         sessionStorage.removeItem(PENDING_REQUEST_KEY);
         setPendingRequest(null);
         setMessage(request.message);
+      } else {
+        setError("");
       }
     } finally {
       setLoading(false);
@@ -267,13 +255,13 @@ export default function ChatPage() {
               <div key={i} className="bubble customer">{m.text}</div>
             ) : m.greeting ? (
               <div key={i} className="bubble system">{m.text}</div>
-            ) : (
+            ) : m.receipt ? (
               <div key={i} className="bubble system">
-                <span className={`badge ${m.result.decision}`}>{m.result.decision}</span>
-                <p>{m.result.reply}</p>
-                <p className="muted small">{m.result.rule}: {m.result.reasons.join(" ")}</p>
-                <p className={`ai-status ${m.result.ai_status}`}>{aiStatusLabel(m.result.ai_status)}</p>
+                <b>Request received</b>
+                <p>{m.receipt.message}</p>
               </div>
+            ) : (
+              null
             )
           )}
           {loading && <div className="bubble system pulse">{LOADING_STEPS[step]}</div>}
@@ -282,7 +270,7 @@ export default function ChatPage() {
         {error && <p className="error">{error}</p>}
         {pendingRequest && (
           <div className="retry-panel" role="alert">
-            <p>We haven’t received confirmation. Retry the same request safely.</p>
+            <p>We couldn’t confirm your request was received. You can retry safely; duplicate requests are prevented.</p>
             <button type="button" disabled={loading} onClick={() => sendPendingRequest(pendingRequest)}>
               {loading ? "Retrying..." : "Retry request"}
             </button>

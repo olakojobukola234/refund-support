@@ -13,7 +13,11 @@ def create_refund_request(request):
     serializer = RefundRequestInputSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     record = workflow.process_request(**serializer.validated_data)
-    return Response(RefundRequestSerializer(record).data, status=201)
+    return Response({
+        "request_id": record.id,
+        "status": "received",
+        "message": "Your refund request has been received. Contact support if you need an update.",
+    }, status=201)
 
 
 @api_view(["GET"])

@@ -134,9 +134,17 @@ class PolicyTests(TestCase):
 
         self.assertEqual(first.status_code, 201)
         self.assertEqual(replay.status_code, 201)
-        self.assertEqual(replay.data["id"], first.data["id"])
+        self.assertEqual(replay.data["request_id"], first.data["request_id"])
+        self.assertEqual(replay.data["status"], "received")
+        self.assertNotIn("decision", replay.data)
         self.assertEqual(RefundRequest.objects.filter(idempotency_key=key).count(), 1)
-        self.assertEqual(replay.data["message"], "The earbuds arrived damaged.")
+        saved = RefundRequest.objects.get(idempotency_key=key)
+        self.assertEqual(saved.message, "The earbuds arrived damaged.")
+        self.assertEqual(saved.decision, "Approved")
+        dashboard_response = client.get("/api/requests/")
+        dashboard_record = next(item for item in dashboard_response.data if item["id"] == saved.id)
+        self.assertEqual(dashboard_record["decision"], "Approved")
+        self.assertIn("ai_status", dashboard_record)
 
     @patch("refunds.services.workflow.ai._generate", side_effect=RuntimeError("429 RESOURCE_EXHAUSTED quota exceeded"))
     def test_ai_quota_failure_is_recorded_for_dashboard(self, generate):
@@ -148,9 +156,12 @@ class PolicyTests(TestCase):
         }, format="json")
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["decision"], "Escalated")
-        self.assertEqual(response.data["ai_status"], "quota_exceeded")
-        self.assertIn("quota", response.data["ai_notes"].lower())
+        self.assertEqual(response.data["status"], "received")
+        self.assertNotIn("decision", response.data)
+        saved = RefundRequest.objects.get(id=response.data["request_id"])
+        self.assertEqual(saved.decision, "Escalated")
+        self.assertEqual(saved.ai_status, "quota_exceeded")
+        self.assertIn("quota", saved.ai_notes.lower())
         generate.assert_called_once()
 
     @patch("refunds.services.workflow.ai._generate", side_effect=TimeoutError("request timed out"))
@@ -163,9 +174,12 @@ class PolicyTests(TestCase):
         }, format="json")
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["decision"], "Escalated")
-        self.assertEqual(response.data["ai_status"], "unavailable")
-        self.assertIn("network or service error", response.data["ai_notes"].lower())
+        self.assertEqual(response.data["status"], "received")
+        self.assertNotIn("decision", response.data)
+        saved = RefundRequest.objects.get(id=response.data["request_id"])
+        self.assertEqual(saved.decision, "Escalated")
+        self.assertEqual(saved.ai_status, "unavailable")
+        self.assertIn("network or service error", saved.ai_notes.lower())
         generate.assert_called_once()
 
     @patch("refunds.services.ai.OpenAI")
@@ -225,8 +239,11 @@ class PolicyTests(TestCase):
         self.assertIn("order_data", process.call_args.kwargs, process.call_args)
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["decision"], "Approved", response.data)
-        self.assertEqual(response.data["order_id"], "TEST-9001")
+        self.assertEqual(response.data["status"], "received")
+        self.assertNotIn("decision", response.data)
+        saved = RefundRequest.objects.get(id=response.data["request_id"])
+        self.assertEqual(saved.decision, "Approved")
+        self.assertEqual(saved.order_id, "TEST-9001")
         self.assertFalse(Order.objects.filter(id="TEST-9001").exists())
         generate.assert_not_called()
 
