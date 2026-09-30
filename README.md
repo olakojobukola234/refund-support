@@ -85,17 +85,7 @@ docker compose exec backend python manage.py test refunds
 
 The tests cover policy boundaries, order ownership, seeded data, local classification, AI-free paths, and prompt-injection/conflicting-request escalation.
 
-## Demo Walkthrough
 
-A short recording should show:
-
-1. Open the running app at `http://localhost:3000` and show a seeded mock order.
-2. Switch to Custom simulation, change the order amount or date, and submit a damaged-item request to show the decision follows the supplied facts.
-3. Show a final-sale or prompt-injection request and explain the result.
-4. Open the Support dashboard and show saved requests and audit reasons.
-5. Briefly explain the React-to-Django request flow, policy-first decision engine, and optional Gemini/OpenAI-compatible classification.
-
-**Video link:** Add the hosted recording URL here after recording.
 
 ## Assumptions and Trade-offs
 
