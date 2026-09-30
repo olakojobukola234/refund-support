@@ -7,7 +7,11 @@ import time
 
 from google import genai
 from google.genai import types
-from openai import OpenAI
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 
 log = logging.getLogger(__name__)
 
@@ -84,6 +88,8 @@ def _generate(system, contents, json_mode=False):
             response_mime_type="application/json" if json_mode else None,
         )
     elif provider == "openai":
+        if OpenAI is None:
+            raise RuntimeError("OpenAI SDK is not installed; install backend/requirements.txt")
         client_options = {"api_key": key}
         base_url = os.environ.get("OPENAI_BASE_URL")
         if base_url:

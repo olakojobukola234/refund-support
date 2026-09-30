@@ -12,6 +12,14 @@ docker compose up --build
 
 The frontend is at <http://localhost:3000>. The API is at <http://localhost:8000/api/>. Compose starts three services: `mock-data` runs migrations and seeds 15 customers and 23 orders, `backend` serves the API from the initialized database, and `frontend` serves the React app after the API is healthy. No AI key is needed to start the app. The legacy command `docker-compose up --build` works with installations that provide the standalone Compose command.
 
+For local backend development without Docker, install the backend dependencies into the active virtual environment before starting Django:
+
+```sh
+cd backend
+python -m pip install -r requirements.txt
+python manage.py runserver
+```
+
 To stop the services:
 
 ```sh
