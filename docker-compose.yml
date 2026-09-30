@@ -1,8 +1,18 @@
 services:
+  mock-data:
+    build: ./backend
+    command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py seed"]
+    environment:
+      DJANGO_DB_PATH: /app/data/refunds.sqlite3
+    volumes:
+      - refund_data:/app/data
+    restart: "no"
+
   backend:
     build: ./backend
     environment:
       DJANGO_DEBUG: "false"
+      DJANGO_DB_PATH: /app/data/refunds.sqlite3
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -10,8 +20,19 @@ services:
       API_KEY: ${API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
       AI_REPLY_ENABLED: ${AI_REPLY_ENABLED:-false}
+    volumes:
+      - refund_data:/app/data
     ports:
       - "8000:8000"
+    depends_on:
+      mock-data:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/customers/', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
 
   frontend:
     build:
@@ -21,4 +42,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+
+volumes:
+  refund_data:

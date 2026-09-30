@@ -1,9 +1,10 @@
+from datetime import date
 from unittest.mock import Mock, patch
 
 from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
-from refunds.models import Order
+from refunds.models import Customer, Order
 from refunds.services import ai
 from refunds.services.policy import evaluate, count_recent_refunds
 from refunds.services.workflow import process_request
@@ -16,6 +17,21 @@ class PolicyTests(TestCase):
     def run_case(self, oid, email, reason):
         order = Order.objects.filter(id=oid).first()
         return evaluate(order, email, reason, count_recent_refunds(email))
+
+    def test_seed_is_idempotent_and_preserves_unrelated_records(self):
+        extra_customer = Customer.objects.create(
+            name="Reviewer Customer", email="reviewer@example.com"
+        )
+        Order.objects.create(
+            id="REVIEWER-1", customer=extra_customer, item="Test item",
+            amount="25.00", order_date=date.today(),
+        )
+
+        call_command("seed", verbosity=0)
+
+        self.assertEqual(Customer.objects.count(), 16)
+        self.assertEqual(Order.objects.count(), 24)
+        self.assertTrue(Order.objects.filter(id="REVIEWER-1").exists())
 
     def test_approved(self):
         self.assertEqual(self.run_case("ORD-1001", "amara@example.com", "changed_mind").status, "Approved")

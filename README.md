@@ -10,7 +10,7 @@ Requirements: Docker Engine with the Docker Compose plugin, or Docker Desktop wi
 docker compose up --build
 ```
 
-The frontend is at <http://localhost:3000>. The API is at <http://localhost:8000/api/>. On startup, the backend applies migrations and seeds 15 mock customers and 23 orders. No separate mock-data service or API key is required to start the app. The legacy command `docker-compose up --build` works with installations that provide the standalone Compose command.
+The frontend is at <http://localhost:3000>. The API is at <http://localhost:8000/api/>. Compose starts three services: `mock-data` runs migrations and seeds 15 customers and 23 orders, `backend` serves the API from the initialized database, and `frontend` serves the React app after the API is healthy. No AI key is needed to start the app. The legacy command `docker-compose up --build` works with installations that provide the standalone Compose command.
 
 To stop the services:
 
@@ -18,7 +18,7 @@ To stop the services:
 docker compose down
 ```
 
-The seed command recreates the mock customer and order records at backend startup. This is demo data, not persistent production data; restarting the backend resets those records. Refund requests are stored in the backend's SQLite database inside its container.
+Mock data and refund-request audit records share a named SQLite volume, so they survive normal container restarts and `docker compose down`. The separate seed job is idempotent: it creates or refreshes the 15 sample customers and 23 sample orders without deleting unrelated records. To remove the demo database and seed from scratch, run `docker compose down -v` before starting again.
 
 ## Environment Variables
 
@@ -46,7 +46,8 @@ For OpenAI, set `AI_PROVIDER=openai` and `OPENAI_API_KEY=...`. For Gemini, set `
 ## Architecture
 
 - `frontend/`: React and Vite app. The chat supports seeded mock orders and reviewer-authored custom simulations; the support dashboard lists recent decisions.
-- `backend/`: Django REST Framework API, SQLite models, and a management command that seeds demo data when the container starts.
+- `mock-data` Compose service: runs the backend image as a one-shot data initialization job, applying migrations and idempotently seeding the shared SQLite volume.
+- `backend/`: Django REST Framework API and policy workflow, reading the same shared SQLite volume after the data job completes.
 - `backend/refunds/services/policy.py`: deterministic source of truth for refund outcomes. The model does not override these rules.
 - `backend/refunds/services/workflow.py`: request orchestration: sanitization, order lookup, policy pre-checks, optional classification, safeguards, final result, and persisted audit record.
 - `backend/refunds/services/ai.py`: optional Gemini/OpenAI-compatible classification and reply generation, local reason matching, prompt-injection checks, and fallback replies.

@@ -18,13 +18,13 @@ A request is escalated when the order cannot be verified, the email does not mat
 
 ## How Requests Are Processed
 
-1. The service receives the customer's email, order ID, and message, then queries the mock customer and order records.
+1. The separate mock-data service seeds customer and order records into the shared SQLite volume. The API receives the customer's email, order ID, and message, then queries those records.
 2. Deterministic rules are applied first when enough information is available.
 3. Clear common reasons may be classified locally. The AI model assists with ambiguous language or finding an order ID when one is omitted.
 4. Customer text is treated as untrusted data. Instructions in a message cannot alter the policy; detected prompt-injection attempts are escalated.
 5. The service returns **Approved**, **Denied**, or **Escalated**, with the policy rule and explanation. Replies use fixed templates by default; AI-generated reply wording is optional.
 
-Reviewers can evaluate either seeded examples or custom simulation inputs. Custom simulation facts are temporary inputs, not new customer/order records; only the resulting refund request is retained in the audit history.
+Reviewers can evaluate either seeded examples or custom simulation inputs. The mock-data seed job is idempotent and does not delete unrelated rows. Custom simulation facts are temporary inputs, not new customer/order records; only the resulting refund request is retained in the audit history.
 
 ## Sample Outcomes
 

@@ -46,14 +46,25 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         today = date.today()
-        Order.objects.all().delete()
-        Customer.objects.all().delete()
-        by_email = {e: Customer.objects.create(name=n, email=e) for n, e in CUSTOMERS}
+        by_email = {}
+        for name, email in CUSTOMERS:
+            customer, _ = Customer.objects.update_or_create(
+                email=email,
+                defaults={"name": name},
+            )
+            by_email[email] = customer
+
         for oid, email, item, amount, days_ago, final, refunded in ORDERS:
-            Order.objects.create(
-                id=oid, customer=by_email[email], item=item, amount=amount,
-                order_date=today - timedelta(days=days_ago),
-                final_sale=final, refunded=refunded,
-                refunded_date=today - timedelta(days=max(days_ago - 3, 0)) if refunded else None,
+            Order.objects.update_or_create(
+                id=oid,
+                defaults={
+                    "customer": by_email[email],
+                    "item": item,
+                    "amount": amount,
+                    "order_date": today - timedelta(days=days_ago),
+                    "final_sale": final,
+                    "refunded": refunded,
+                    "refunded_date": today - timedelta(days=max(days_ago - 3, 0)) if refunded else None,
+                },
             )
         self.stdout.write(self.style.SUCCESS(f"Seeded {len(CUSTOMERS)} customers, {len(ORDERS)} orders"))
