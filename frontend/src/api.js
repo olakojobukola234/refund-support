@@ -5,10 +5,7 @@ export async function submitRefund(payload) {
   try {
     res = await fetch(`${BASE}/refund-request/`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Idempotency-Key": payload.idempotency_key,
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
   } catch (err) {
