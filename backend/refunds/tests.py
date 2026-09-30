@@ -135,9 +135,13 @@ class PolicyTests(TestCase):
         self.assertEqual(first.status_code, 201)
         self.assertEqual(replay.status_code, 201)
         self.assertEqual(replay.data["request_id"], first.data["request_id"])
-        self.assertEqual(replay.data["status"], "received")
-        self.assertNotIn("decision", replay.data)
+        self.assertEqual(replay.data["status"], "Approved")
+        self.assertEqual(set(replay.data), {"request_id", "status", "message"})
         self.assertEqual(RefundRequest.objects.filter(idempotency_key=key).count(), 1)
+        lookup = client.get(f"/api/refund-request/{key}/")
+        self.assertEqual(lookup.status_code, 200)
+        self.assertEqual(lookup.data, replay.data)
+        self.assertEqual(client.get(f"/api/refund-request/{uuid4()}/").status_code, 404)
         saved = RefundRequest.objects.get(idempotency_key=key)
         self.assertEqual(saved.message, "The earbuds arrived damaged.")
         self.assertEqual(saved.decision, "Approved")
@@ -145,6 +149,19 @@ class PolicyTests(TestCase):
         dashboard_record = next(item for item in dashboard_response.data if item["id"] == saved.id)
         self.assertEqual(dashboard_record["decision"], "Approved")
         self.assertIn("ai_status", dashboard_record)
+
+    def test_customer_receipt_maps_denied_to_rejected_without_policy_details(self):
+        response = APIClient().post("/api/refund-request/", {
+            "idempotency_key": str(uuid4()),
+            "customer_email": "liam@example.com",
+            "order_id": "ORD-1003",
+            "message": "I changed my mind.",
+        }, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["status"], "Rejected")
+        self.assertEqual(set(response.data), {"request_id", "status", "message"})
+        self.assertNotIn("FINAL_SALE", response.data["message"])
 
     @patch("refunds.services.workflow.ai._generate", side_effect=RuntimeError("429 RESOURCE_EXHAUSTED quota exceeded"))
     def test_ai_quota_failure_is_recorded_for_dashboard(self, generate):
@@ -156,8 +173,8 @@ class PolicyTests(TestCase):
         }, format="json")
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["status"], "received")
-        self.assertNotIn("decision", response.data)
+        self.assertEqual(response.data["status"], "Escalated")
+        self.assertNotIn("ai_status", response.data)
         saved = RefundRequest.objects.get(id=response.data["request_id"])
         self.assertEqual(saved.decision, "Escalated")
         self.assertEqual(saved.ai_status, "quota_exceeded")
@@ -174,8 +191,8 @@ class PolicyTests(TestCase):
         }, format="json")
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["status"], "received")
-        self.assertNotIn("decision", response.data)
+        self.assertEqual(response.data["status"], "Escalated")
+        self.assertNotIn("ai_status", response.data)
         saved = RefundRequest.objects.get(id=response.data["request_id"])
         self.assertEqual(saved.decision, "Escalated")
         self.assertEqual(saved.ai_status, "unavailable")
@@ -239,8 +256,8 @@ class PolicyTests(TestCase):
         self.assertIn("order_data", process.call_args.kwargs, process.call_args)
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["status"], "received")
-        self.assertNotIn("decision", response.data)
+        self.assertEqual(response.data["status"], "Approved")
+        self.assertNotIn("rule", response.data)
         saved = RefundRequest.objects.get(id=response.data["request_id"])
         self.assertEqual(saved.decision, "Approved")
         self.assertEqual(saved.order_id, "TEST-9001")

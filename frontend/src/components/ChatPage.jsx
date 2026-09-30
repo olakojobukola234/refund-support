@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchCustomers, submitRefund } from "../api";
+import { fetchCustomers, fetchRefundReceipt, submitRefund } from "../api";
 
 const QUICK_TESTS = [
   { label: "Damaged item", text: "The item arrived damaged and doesn't work." },
@@ -39,10 +39,12 @@ export default function ChatPage() {
     recent_refunds: "0",
   }));
   const [message, setMessage] = useState("");
-  const [pendingRequest, setPendingRequest] = useState(readPendingRequest);
+  const [initialPendingRequest] = useState(readPendingRequest);
+  const [pendingRequest, setPendingRequest] = useState(initialPendingRequest);
+  const [checkingPending, setCheckingPending] = useState(Boolean(initialPendingRequest));
   const [chat, setChat] = useState([
     { from: "system", greeting: true, text: "Hello! I can help you with your order refund today." },
-    ...(readPendingRequest() ? [{ from: "customer", text: readPendingRequest().message }] : []),
+    ...(initialPendingRequest ? [{ from: "customer", text: initialPendingRequest.message }] : []),
   ]);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(0);
@@ -58,6 +60,16 @@ export default function ChatPage() {
     const t = setInterval(() => setStep((s) => Math.min(s + 1, LOADING_STEPS.length - 1)), 900);
     return () => clearInterval(t);
   }, [loading]);
+
+  useEffect(() => {
+    if (!pendingRequest && !loading) return;
+    function warnBeforeLeaving(event) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [loading, pendingRequest]);
 
   const customer = customers.find((c) => String(c.id) === String(customerId));
   const allOrders = customers.flatMap((c) => c.orders.map((o) => ({ ...o, owner: c.name })));
@@ -91,9 +103,7 @@ export default function ChatPage() {
         ...request.payload,
         idempotency_key: request.idempotency_key,
       });
-      setChat((current) => [...current, { from: "system", receipt: result }]);
-      sessionStorage.removeItem(PENDING_REQUEST_KEY);
-      setPendingRequest(null);
+      completeRequest(result);
     } catch (err) {
       if (err.retryable === false) {
         setError(`${err.message}. Check the details and submit again.`);
@@ -107,6 +117,30 @@ export default function ChatPage() {
       setLoading(false);
     }
   }
+
+  function completeRequest(receipt) {
+    setChat((current) => [...current, { from: "system", receipt }]);
+    sessionStorage.removeItem(PENDING_REQUEST_KEY);
+    setPendingRequest(null);
+    setCheckingPending(false);
+  }
+
+  useEffect(() => {
+    if (!initialPendingRequest) return;
+    let cancelled = false;
+    async function reconcilePendingRequest() {
+      try {
+        const receipt = await fetchRefundReceipt(initialPendingRequest.idempotency_key);
+        if (!cancelled && receipt) completeRequest(receipt);
+      } catch {
+        // Keep the saved request available for a safe manual retry.
+      } finally {
+        if (!cancelled) setCheckingPending(false);
+      }
+    }
+    reconcilePendingRequest();
+    return () => { cancelled = true; };
+  }, [initialPendingRequest]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -257,7 +291,9 @@ export default function ChatPage() {
               <div key={i} className="bubble system">{m.text}</div>
             ) : m.receipt ? (
               <div key={i} className="bubble system">
-                <b>Request received</b>
+                <span className={`badge ${m.receipt.status === "Rejected" ? "Denied" : m.receipt.status}`}>
+                  {m.receipt.status}
+                </span>
                 <p>{m.receipt.message}</p>
               </div>
             ) : (
@@ -270,9 +306,11 @@ export default function ChatPage() {
         {error && <p className="error">{error}</p>}
         {pendingRequest && (
           <div className="retry-panel" role="alert">
-            <p>We couldn’t confirm your request was received. You can retry safely; duplicate requests are prevented.</p>
-            <button type="button" disabled={loading} onClick={() => sendPendingRequest(pendingRequest)}>
-              {loading ? "Retrying..." : "Retry request"}
+            <p>{checkingPending
+              ? "Checking whether your request was received..."
+              : "We couldn’t confirm your request was received. You can retry safely; duplicate requests are prevented."}</p>
+            <button type="button" disabled={loading || checkingPending} onClick={() => sendPendingRequest(pendingRequest)}>
+              {checkingPending ? "Checking..." : loading ? "Retrying..." : "Retry request"}
             </button>
           </div>
         )}

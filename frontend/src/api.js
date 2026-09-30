@@ -21,6 +21,19 @@ export async function submitRefund(payload) {
   return res.json();
 }
 
+export async function fetchRefundReceipt(idempotencyKey) {
+  let res;
+  try {
+    res = await fetch(`${BASE}/refund-request/${idempotencyKey}/`);
+  } catch (err) {
+    err.retryable = true;
+    throw err;
+  }
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Could not check request status");
+  return res.json();
+}
+
 export async function fetchRequests() {
   const res = await fetch(`${BASE}/requests/`);
   if (!res.ok) throw new Error("Could not load requests");
