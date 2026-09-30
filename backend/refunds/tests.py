@@ -182,7 +182,7 @@ class PolicyTests(TestCase):
 
         self.assertEqual(result, '{"reason":"damaged"}')
         openai_client.assert_called_once_with(
-            api_key="test-key", timeout=8, max_retries=0
+            api_key="test-key", timeout=10, max_retries=0
         )
         call = openai_client.return_value.chat.completions.create.call_args.kwargs
         self.assertEqual(call["model"], "gpt-4o-mini")
@@ -203,7 +203,7 @@ class PolicyTests(TestCase):
         gemini_client.assert_called_once_with(api_key="test-key")
         call = gemini_client.return_value.models.generate_content.call_args.kwargs
         self.assertEqual(call["model"], "test-gemini-model")
-        self.assertEqual(call["config"].http_options.timeout, 8000)
+        self.assertEqual(call["config"].http_options.timeout, 10000)
         self.assertEqual(call["config"].http_options.retry_options.attempts, 1)
 
     @patch("refunds.services.workflow.ai._generate")

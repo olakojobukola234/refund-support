@@ -68,7 +68,7 @@ def classify_locally(message):
     }
 
 
-AI_REQUEST_TIMEOUT_SECONDS = 8
+AI_REQUEST_TIMEOUT_SECONDS = 10
 
 
 def _generate(system, contents, json_mode=False):
