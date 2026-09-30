@@ -25,6 +25,11 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eee; vertical-align: top; }
 .muted { color: #6b7280; }
 .error { color: #b00020; }
+.retry-panel, .ai-warning { margin: 10px 0; padding: 10px 12px; border-left: 4px solid #c77700; background: #fff7e6; color: #693c00; }
+.retry-panel p { margin: 0 0 8px; }
+.ai-status { margin-top: 6px; font-size: 12px; font-weight: 600; }
+.ai-status.quota_exceeded, .ai-status.unavailable, .ai-status.not_configured, .ai-status.error { color: #a14300; }
+.ai-status.success, .ai-status.local, .ai-status.not_used { color: #48605a; }
 .layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
 .layout .card { max-width: none; }
 .sidebar label { display: block; margin: 12px 0 4px; font-size: 13px; font-weight: 600; }

@@ -69,6 +69,8 @@ Seeded mock data is created automatically when the backend starts. It provides e
 
 The policy engine decides the outcome. AI is an assistive classifier/reply writer only, and customer text is treated as untrusted input. Detected injection attempts and conflicting reasons are escalated. AI failures fall back safely rather than changing a policy outcome.
 
+The chat stores an in-flight request and its UUID idempotency key in `sessionStorage`. If a connection drops before confirmation, Retry resends the exact same payload/key; the API returns the original audit record rather than creating a duplicate. The support dashboard records AI status (`success`, `quota_exceeded`, `unavailable`, `not_configured`, or `error`) and warns when recent requests could not use AI. Policy-only/local decisions are labeled separately.
+
 ## Policy Summary
 
 The configured return window is 30 days. Final-sale and already-refunded orders are denied; orders belonging to another customer or not found are escalated. Non-final-sale amounts above $500, three or more refunds in the preceding 90 days, unclear reasons, conflicting reasons, and suspected prompt injection require human review. Clear damage, wrong-item, or changed-mind requests for eligible orders may be approved. See [the full sample policy](docs/refund-policy.md).

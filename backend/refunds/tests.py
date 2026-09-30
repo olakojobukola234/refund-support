@@ -1,10 +1,11 @@
 from datetime import date
 from unittest.mock import Mock, patch
+from uuid import uuid4
 
 from django.core.management import call_command
 from django.test import TestCase
 from rest_framework.test import APIClient
-from refunds.models import Customer, Order
+from refunds.models import Customer, Order, RefundRequest
 from refunds.services import ai
 from refunds.services.policy import evaluate, count_recent_refunds
 from refunds.services.workflow import process_request
@@ -116,6 +117,41 @@ class PolicyTests(TestCase):
         self.assertEqual(record.rule, "CONFLICTING_REQUEST")
         self.assertEqual(record.decision, "Escalated")
         generate.assert_not_called()
+
+    def test_replayed_idempotency_key_returns_original_request(self):
+        key = str(uuid4())
+        client = APIClient()
+        payload = {
+            "idempotency_key": key,
+            "customer_email": "amara@example.com",
+            "order_id": "ORD-1001",
+            "message": "The earbuds arrived damaged.",
+        }
+
+        first = client.post("/api/refund-request/", payload, format="json")
+        payload["message"] = "I changed my mind."
+        replay = client.post("/api/refund-request/", payload, format="json")
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(replay.status_code, 201)
+        self.assertEqual(replay.data["id"], first.data["id"])
+        self.assertEqual(RefundRequest.objects.filter(idempotency_key=key).count(), 1)
+        self.assertEqual(replay.data["message"], "The earbuds arrived damaged.")
+
+    @patch("refunds.services.workflow.ai._generate", side_effect=RuntimeError("429 RESOURCE_EXHAUSTED quota exceeded"))
+    def test_ai_quota_failure_is_recorded_for_dashboard(self, generate):
+        response = APIClient().post("/api/refund-request/", {
+            "idempotency_key": str(uuid4()),
+            "customer_email": "amara@example.com",
+            "order_id": "ORD-1001",
+            "message": "I need help with a refund for an unexpected situation.",
+        }, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["decision"], "Escalated")
+        self.assertEqual(response.data["ai_status"], "quota_exceeded")
+        self.assertIn("quota", response.data["ai_notes"].lower())
+        generate.assert_called_once()
 
     @patch("refunds.services.ai.OpenAI")
     @patch.dict("os.environ", {

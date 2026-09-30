@@ -1,4 +1,6 @@
 """Orchestrates one refund request: cheap rules first, AI only when needed."""
+from django.db import IntegrityError
+
 from refunds.models import Customer, Order, RefundRequest
 from refunds.services import ai
 from refunds.services.policy import Decision, count_recent_refunds, evaluate, pre_check
@@ -8,7 +10,12 @@ def _lookup(order_id):
     return Order.objects.select_related("customer").filter(id=order_id).first()
 
 
-def process_request(customer_email, order_id, message, order_data=None):
+def process_request(customer_email, order_id, message, order_data=None, idempotency_key=None):
+    if idempotency_key:
+        existing = RefundRequest.objects.filter(idempotency_key=idempotency_key).first()
+        if existing:
+            return existing
+
     clean = ai.sanitize(message)
     order_id = (order_id or "").strip().upper()
     classification = ai.classify_locally(clean) if ai.looks_like_injection(clean) else None
@@ -44,6 +51,7 @@ def process_request(customer_email, order_id, message, order_data=None):
             "injection_suspected": ai.looks_like_injection(clean),
             "conflict_suspected": False,
             "summary": "Decided by policy pre-checks; AI classification skipped.",
+            "ai_status": "not_used",
         }
 
     if classification["injection_suspected"]:
@@ -53,18 +61,34 @@ def process_request(customer_email, order_id, message, order_data=None):
         decision = Decision("Escalated", "CONFLICTING_REQUEST",
                             ["Request contains conflicting refund reasons; needs human review."])
 
-    reply = (ai.write_reply(decision, order) if classification.get("ai_used")
-             else ai.FALLBACKS[decision.status].format(reasons=" ".join(decision.reasons)))
+    ai_status = classification.get("ai_status", "not_used")
+    ai_notes = classification["summary"]
+    if classification.get("ai_used"):
+        reply, reply_ai_status, reply_ai_notes = ai.write_reply_with_status(decision, order)
+        if reply_ai_status not in {"success", "not_requested"}:
+            ai_status = reply_ai_status
+            ai_notes = f"{ai_notes} {reply_ai_notes}".strip()
+    else:
+        reply = ai.FALLBACKS[decision.status].format(reasons=" ".join(decision.reasons))
 
-    return RefundRequest.objects.create(
-        customer_email=customer_email,
-        order_id=order_id,
-        message=clean,
-        reason=classification["reason"],
-        decision=decision.status,
-        rule=decision.rule,
-        reasons=decision.reasons,
-        injection_flag=classification["injection_suspected"],
-        ai_notes=classification["summary"],
-        reply=reply,
-    )
+    try:
+        return RefundRequest.objects.create(
+            idempotency_key=idempotency_key,
+            customer_email=customer_email,
+            order_id=order_id,
+            message=clean,
+            reason=classification["reason"],
+            decision=decision.status,
+            rule=decision.rule,
+            reasons=decision.reasons,
+            injection_flag=classification["injection_suspected"],
+            ai_status=ai_status,
+            ai_notes=ai_notes,
+            reply=reply,
+        )
+    except IntegrityError:
+        if idempotency_key:
+            existing = RefundRequest.objects.filter(idempotency_key=idempotency_key).first()
+            if existing:
+                return existing
+        raise

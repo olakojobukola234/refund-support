@@ -1,14 +1,25 @@
 const BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 export async function submitRefund(payload) {
-  const res = await fetch(`${BASE}/refund-request/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE}/refund-request/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": payload.idempotency_key,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    err.retryable = true;
+    throw err;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(Object.values(err).flat().join(" ") || "Request failed");
+    const error = new Error(Object.values(err).flat().join(" ") || "Request failed");
+    error.retryable = res.status === 429 || res.status >= 500;
+    throw error;
   }
   return res.json();
 }

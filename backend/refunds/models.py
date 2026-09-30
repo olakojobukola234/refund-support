@@ -25,6 +25,7 @@ class Order(models.Model):
 
 class RefundRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
+    idempotency_key = models.UUIDField(unique=True, null=True, blank=True)
     customer_email = models.EmailField(blank=True)
     order_id = models.CharField(max_length=20, blank=True)
     message = models.TextField()
@@ -33,6 +34,7 @@ class RefundRequest(models.Model):
     rule = models.CharField(max_length=40, blank=True)
     reasons = models.JSONField(default=list)
     injection_flag = models.BooleanField(default=False)
+    ai_status = models.CharField(max_length=24, default="not_used")
     ai_notes = models.TextField(blank=True)
     reply = models.TextField(blank=True)
 

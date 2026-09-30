@@ -12,6 +12,7 @@ class SimulatedOrderSerializer(serializers.Serializer):
 
 
 class RefundRequestInputSerializer(serializers.Serializer):
+    idempotency_key = serializers.UUIDField(required=False)
     customer_email = serializers.EmailField()
     order_id = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
     message = serializers.CharField(max_length=2000)
